@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>训练计时器</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#1a1d24; --fg:#e8eaed; --sub:#9aa0a6;
+    --go:#4ade80; --stop:#f87171; --line:#2a2e37; --accent:#60a5fa;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;
+    min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:24px 16px 40px;}
+  h1{font-size:20px;font-weight:600;margin:8px 0 20px;letter-spacing:1px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;
+    width:100%;max-width:420px;padding:20px;margin-bottom:16px;}
+  label{display:block;font-size:13px;color:var(--sub);margin-bottom:6px;}
+  input,textarea{width:100%;background:#11141a;border:1px solid var(--line);
+    color:var(--fg);border-radius:10px;padding:12px;font-size:16px;font-family:inherit;}
+  textarea{resize:vertical;min-height:72px;}
+  .timer{font-size:52px;font-weight:700;text-align:center;letter-spacing:2px;
+    font-variant-numeric:tabular-nums;margin:8px 0 4px;}
+  .sub{text-align:center;color:var(--sub);font-size:13px;margin-bottom:18px;}
+  button{width:100%;border:none;border-radius:14px;padding:18px;font-size:18px;
+    font-weight:600;color:#0f1115;cursor:pointer;font-family:inherit;}
+  .btn-go{background:var(--go);}
+  .btn-stop{background:var(--stop);}
+  .btn-save{background:var(--accent);}
+  .btn-ghost{background:transparent;color:var(--sub);border:1px solid var(--line);
+    font-weight:500;font-size:14px;padding:12px;}
+  .hidden{display:none;}
+  .hist h2{font-size:14px;color:var(--sub);font-weight:600;margin:0 0 12px;}
+  .row{display:flex;justify-content:space-between;gap:12px;padding:12px 0;
+    border-top:1px solid var(--line);font-size:14px;}
+  .row:first-of-type{border-top:none;}
+  .row .meta{color:var(--sub);font-size:12px;margin-top:3px;}
+  .row .dur{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .ops{margin-top:4px;font-size:13px;}
+  .ops a{color:var(--accent);cursor:pointer;margin-left:10px;}
+  .row.edit{display:block;}
+  .row.edit input,.row.edit textarea{font-size:15px;padding:9px;}
+  .row.edit textarea{min-height:56px;}
+  .empty{color:var(--sub);font-size:13px;text-align:center;padding:8px 0;}
+</style>
+</head>
+<body>
+  <h1>训练计时器</h1>
+
+  <!-- 状态1：准备开始 -->
+  <div class="card" id="cardIdle">
+    <div class="sub" style="margin-bottom:18px">准备好就开始</div>
+    <button class="btn-go" id="btnStart">开始训练</button>
+  </div>
+
+  <!-- 状态2：计时中 -->
+  <div class="card hidden" id="cardRunning">
+    <div class="timer" id="clock">00:00</div>
+    <div class="sub" id="startedAt"></div>
+    <button class="btn-stop" id="btnStop">结束训练</button>
+    <div style="height:10px"></div>
+    <button class="btn-ghost" id="btnCancelRun">取消（不保存）</button>
+  </div>
+
+  <!-- 状态3：结束，填感受 -->
+  <div class="card hidden" id="cardFinish">
+    <div class="timer" id="finalDur" style="font-size:38px;color:var(--go)"></div>
+    <div class="sub" id="finalRange"></div>
+    <label>这次练得怎么样？（感受、状态、哪里不舒服…）</label>
+    <textarea id="note" placeholder="随便写，原话就行"></textarea>
+    <div style="height:14px"></div>
+    <button class="btn-save" id="btnSave">保存这次记录</button>
+    <div style="height:10px"></div>
+    <button class="btn-ghost" id="btnCancelFinish">取消（不保存）</button>
+  </div>
+
+  <!-- 历史 -->
+  <div class="card hist">
+    <h2>训练历史</h2>
+    <div id="histList"><div class="empty">还没有记录</div></div>
+    <div style="height:14px"></div>
+    <button class="btn-ghost" id="btnExport">导出全部（CSV）</button>
+  </div>
+
+<script>
+const KEY="workout_sessions";
+const $=id=>document.getElementById(id);
+let startTs=null, endTs=null, tick=null, editId=null;
+
+const pad=n=>String(n).padStart(2,"0");
+const fmtClock=ms=>{const s=Math.floor(ms/1000);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;
+  return h>0?`${pad(h)}:${pad(m)}:${pad(x)}`:`${pad(m)}:${pad(x)}`;};
+const fmtSec=ts=>{if(ts==null||isNaN(ts))return "—";const d=new Date(ts);return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;};
+const fmtDate=ts=>{const d=new Date(ts);return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;};
+const load=()=>JSON.parse(localStorage.getItem(KEY)||"[]");
+const save=a=>localStorage.setItem(KEY,JSON.stringify(a));
+const mins=(a,b)=>(a==null||b==null||isNaN(a)||isNaN(b))?"—":Math.round((b-a)/60000);
+
+// 兼容老版本数据：之前存的是 "时:分" 字符串 + minutes，没有毫秒时间戳，这里升级成新格式
+function migrate(){
+  let arr=JSON.parse(localStorage.getItem(KEY)||"[]"),changed=false;
+  arr=arr.map((r,i)=>{
+    if(typeof r.startTs==="number"&&typeof r.endTs==="number"){
+      if(typeof r.id!=="number"){r.id=Date.now()+i;changed=true;}
+      return r;
+    }
+    changed=true;
+    const d=r.date||fmtDate(Date.now());
+    const norm=t=>(t&&t.length===5)?t+":00":(t||"00:00:00");
+    let s=r.start?new Date(`${d}T${norm(r.start)}`).getTime():null;
+    let e=r.end?new Date(`${d}T${norm(r.end)}`).getTime():null;
+    if(s&&!e&&typeof r.minutes==="number")e=s+r.minutes*60000;
+    return {id:(typeof r.id==="number"?r.id:Date.now()+i),date:d,
+      startTs:isNaN(s)?null:s,endTs:isNaN(e)?null:e,note:r.note||""};
+  });
+  if(changed)localStorage.setItem(KEY,JSON.stringify(arr));
+}
+
+function show(state){
+  $("cardIdle").classList.toggle("hidden",state!=="idle");
+  $("cardRunning").classList.toggle("hidden",state!=="running");
+  $("cardFinish").classList.toggle("hidden",state!=="finish");
+}
+function reset(){clearInterval(tick);startTs=endTs=null;show("idle");}
+
+$("btnStart").onclick=()=>{
+  startTs=Date.now();
+  $("startedAt").textContent="开始于 "+fmtSec(startTs);
+  $("clock").textContent="00:00";
+  show("running");
+  tick=setInterval(()=>{$("clock").textContent=fmtClock(Date.now()-startTs);},1000);
+};
+$("btnCancelRun").onclick=()=>{ if(confirm("取消这次计时？已存的历史不受影响")) reset(); };
+
+$("btnStop").onclick=()=>{
+  clearInterval(tick);
+  endTs=Date.now();
+  $("finalDur").textContent=mins(startTs,endTs)+" 分钟";
+  $("finalRange").textContent=`${fmtSec(startTs)} – ${fmtSec(endTs)}`;
+  $("note").value="";
+  show("finish");
+};
+$("btnCancelFinish").onclick=()=>{ if(confirm("取消这次记录？这次不保存，已存的历史不受影响")) reset(); };
+
+$("btnSave").onclick=()=>{
+  const arr=load();
+  arr.unshift({id:Date.now(), date:fmtDate(startTs), startTs, endTs, note:$("note").value.trim()});
+  save(arr);
+  reset();
+  render();
+};
+
+function render(){
+  const arr=load();
+  if(!arr.length){$("histList").innerHTML='<div class="empty">还没有记录</div>';return;}
+  $("histList").innerHTML=arr.map(r=>{
+    if(r.id===editId){
+      return `<div class="row edit">
+        <input type="date" id="ed-date" value="${r.date}">
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <input type="time" step="1" id="ed-start" value="${fmtSec(r.startTs)}">
+          <input type="time" step="1" id="ed-end" value="${fmtSec(r.endTs)}">
+        </div>
+        <textarea id="ed-note" style="margin-top:8px" placeholder="感受">${r.note||""}</textarea>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn-save" style="padding:11px" onclick="saveEdit(${r.id})">保存修改</button>
+          <button class="btn-ghost" style="padding:11px" onclick="cancelEdit()">取消</button>
+        </div>
+      </div>`;
+    }
+    return `<div class="row">
+      <div>
+        <div>${r.date}</div>
+        <div class="meta">${fmtSec(r.startTs)}–${fmtSec(r.endTs)}${r.note?" · "+r.note:""}</div>
+      </div>
+      <div style="text-align:right;white-space:nowrap">
+        <div class="dur">${mins(r.startTs,r.endTs)}′</div>
+        <div class="ops"><a onclick="startEdit(${r.id})">改</a><a onclick="delRec(${r.id})">删</a></div>
+      </div>
+    </div>`;
+  }).join("");
+}
+function startEdit(id){editId=id;render();}
+function cancelEdit(){editId=null;render();}
+function saveEdit(id){
+  const arr=load();const r=arr.find(x=>x.id===id);if(!r)return;
+  const d=$("ed-date").value;
+  const norm=t=>t.length===5?t+":00":t;
+  r.date=d;
+  r.startTs=new Date(`${d}T${norm($("ed-start").value)}`).getTime();
+  r.endTs=new Date(`${d}T${norm($("ed-end").value)}`).getTime();
+  r.note=$("ed-note").value.trim();
+  save(arr);editId=null;render();
+}
+function delRec(id){
+  if(!confirm("删除这条记录？"))return;
+  save(load().filter(x=>x.id!==id));render();
+}
+
+$("btnExport").onclick=()=>{
+  const arr=load();
+  if(!arr.length){alert("还没有记录");return;}
+  const head="日期,开始,结束,时长(分钟),感受\n";
+  const body=arr.map(r=>[r.date,fmtSec(r.startTs),fmtSec(r.endTs),mins(r.startTs,r.endTs),
+    '"'+(r.note||"").replace(/"/g,'""')+'"'].join(",")).join("\n");
+  const blob=new Blob(["﻿"+head+body],{type:"text/csv;charset=utf-8"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="训练记录_"+fmtDate(Date.now())+".csv";
+  a.click();
+};
+
+migrate();
+render();
+show("idle");
+</script>
+</body>
+</html>

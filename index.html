@@ -96,6 +96,7 @@ const fmtDate=ts=>{const d=new Date(ts);return `${d.getFullYear()}-${pad(d.getMo
 const load=()=>JSON.parse(localStorage.getItem(KEY)||"[]");
 const save=a=>localStorage.setItem(KEY,JSON.stringify(a));
 const mins=(a,b)=>(a==null||b==null||isNaN(a)||isNaN(b))?"—":Math.round((b-a)/60000);
+const fmtDur=ms=>{if(ms==null||isNaN(ms)||ms<0)return "—";const s=Math.round(ms/1000);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return (h?h+"时":"")+(h||m?m+"分":"")+x+"秒";};
 
 // 兼容老版本数据：之前存的是 "时:分" 字符串 + minutes，没有毫秒时间戳，这里升级成新格式
 function migrate(){
@@ -136,7 +137,7 @@ $("btnCancelRun").onclick=()=>{ if(confirm("取消这次计时？已存的历史
 $("btnStop").onclick=()=>{
   clearInterval(tick);
   endTs=Date.now();
-  $("finalDur").textContent=mins(startTs,endTs)+" 分钟";
+  $("finalDur").textContent=fmtDur(endTs-startTs);
   $("finalRange").textContent=`${fmtSec(startTs)} – ${fmtSec(endTs)}`;
   $("note").value="";
   show("finish");
@@ -175,7 +176,7 @@ function render(){
         <div class="meta">${fmtSec(r.startTs)}–${fmtSec(r.endTs)}${r.note?" · "+r.note:""}</div>
       </div>
       <div style="text-align:right;white-space:nowrap">
-        <div class="dur">${mins(r.startTs,r.endTs)}′</div>
+        <div class="dur">${fmtDur(r.endTs-r.startTs)}</div>
         <div class="ops"><a onclick="shareRec(${r.id})">享</a><a onclick="startEdit(${r.id})">改</a><a onclick="delRec(${r.id})">删</a></div>
       </div>
     </div>`;

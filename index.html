@@ -80,6 +80,8 @@
     <h2>训练历史</h2>
     <div id="histList"><div class="empty">还没有记录</div></div>
     <div style="height:14px"></div>
+    <button class="btn-save" id="btnShareAll">分享全部到飞书</button>
+    <div style="height:10px"></div>
     <button class="btn-ghost" id="btnExport">导出全部（CSV）</button>
   </div>
 
@@ -205,6 +207,18 @@ function shareRec(id){
   else if(navigator.clipboard){navigator.clipboard.writeText(txt);alert("已复制，去飞书粘贴：\n\n"+txt);}
   else{prompt("复制下面这行发到飞书：",txt);}
 }
+
+// 一次分享全部历史（按时间正序拼成多行，我那边按 日期+开始 去重写表）
+$("btnShareAll").onclick=()=>{
+  const arr=load();
+  if(!arr.length){alert("还没有记录");return;}
+  const txt=arr.slice().reverse().map(r=>
+    `训练打卡｜${r.date}｜${fmtSec(r.startTs)}-${fmtSec(r.endTs)}｜${mins(r.startTs,r.endTs)}分钟｜感受：${r.note||"无"}`
+  ).join("\n");
+  if(navigator.share){navigator.share({text:txt}).catch(()=>{});}
+  else if(navigator.clipboard){navigator.clipboard.writeText(txt);alert("已复制全部，去飞书粘贴");}
+  else{prompt("复制全部发飞书：",txt);}
+};
 
 $("btnExport").onclick=()=>{
   const arr=load();

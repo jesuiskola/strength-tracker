@@ -177,7 +177,7 @@ function render(){
       </div>
       <div style="text-align:right;white-space:nowrap">
         <div class="dur">${fmtDur(r.endTs-r.startTs)}</div>
-        <div class="ops"><a onclick="shareRec(${r.id})">享</a><a onclick="startEdit(${r.id})">改</a><a onclick="delRec(${r.id})">删</a></div>
+        <div class="ops"><a onclick="startEdit(${r.id})">改</a><a onclick="delRec(${r.id})">删</a></div>
       </div>
     </div>`;
   }).join("");
@@ -197,14 +197,6 @@ function saveEdit(id){
 function delRec(id){
   if(!confirm("删除这条记录？"))return;
   save(load().filter(x=>x.id!==id));render();
-}
-// 分享到飞书：固定格式文字,方便我那边解析写表
-function shareRec(id){
-  const r=load().find(x=>x.id===id);if(!r)return;
-  const txt=`训练打卡｜${r.date}｜${fmtSec(r.startTs)}-${fmtSec(r.endTs)}｜${mins(r.startTs,r.endTs)}分钟｜感受：${r.note||"无"}`;
-  if(navigator.share){navigator.share({text:txt}).catch(()=>{});}
-  else if(navigator.clipboard){navigator.clipboard.writeText(txt);alert("已复制，去飞书粘贴：\n\n"+txt);}
-  else{prompt("复制下面这行发到飞书：",txt);}
 }
 
 $("btnExport").onclick=()=>{
